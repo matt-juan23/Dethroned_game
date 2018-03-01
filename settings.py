@@ -15,7 +15,7 @@ BROWN = (106, 55, 5)
 
 TITLE = "Tilemap"
 WIDTH = 1024
-HEIGHT = 768
+HEIGHT = 768 #testingtest
 FPS = 60
 BGCOLOR = BROWN
 
