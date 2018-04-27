@@ -6,19 +6,7 @@ from pytmx.util_pygame import load_pygame
 def collide_hit_rect(one, two):
     return one.hit_rect.colliderect(two.rect)
 
-class Map:
-    def __init__(self, filename):
-        self.data = []
-        with open(filename, 'rt') as f:
-            for line in f:
-                self.data.append(line.strip())
-
-        self.tilewidth = len(self.data[0])
-        self.tileheight = len(self.data)
-        self.width = self.tilewidth * TILESIZE
-        self.height = self.tileheight * TILESIZE
-
-class TiledMap:
+class TiledMap: # Load map from Tiled to game
     def __init__(self, filename):
         tm = load_pygame(filename, pixelalpha=True)
         self.width = tm.width * tm.tilewidth # 50 * 64
@@ -26,6 +14,7 @@ class TiledMap:
         self.tmxdata = tm
 
     def render(self, surface):
+        # render map to surface which is parameter
         ti = self.tmxdata.get_tile_image_by_gid
         for layer in self.tmxdata.visible_layers:
             if isinstance(layer, pytmx.TiledTileLayer): # Tile layer
@@ -36,12 +25,15 @@ class TiledMap:
                                             y * self.tmxdata.tileheight))
 
     def make_map(self):
+        # return the rendered surface
         temp_surface = pg.Surface((self.width, self.height))
         self.render(temp_surface)
         return temp_surface
 
 class Camera:
+    # camera class
     def __init__(self, width, height):
+        # parameters are width and height of map
         self.camera = pg.Rect(0, 0, width, height)
         self.width = width
         self.height = height
@@ -53,6 +45,7 @@ class Camera:
         return rect.move(self.camera.topleft)
 
     def update(self, target):
+        # update the camera's position
         x = -target.rect.centerx + int(WIDTH / 2)
         y = -target.rect.centery + int(HEIGHT / 2)
 
