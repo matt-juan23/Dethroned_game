@@ -1,11 +1,5 @@
-'''
-MAIN PROBLEMS:
- - bars do not get drawn over if sprite does not move
-'''
-
-# Sprites classes for game
+# Sprites File
 import pygame as pg
-import pytweening as tween
 import time
 from random import uniform, choice, randint, random
 from settings import *
@@ -13,10 +7,10 @@ from tilemap import *
 from itertools import chain
 vec = pg.math.Vector2
 
+# handles colliding with walls
+# Input: sprite, walls group and direction of collision
+# Author: KidsCanCode
 def collide_with_walls(sprite, group, dir): 
-    # Not my code. taken from kidscancode
-    # handles colliding with walls
-    # takes sprite, walls group and direction of collision
     if dir == 'x':
         hits = pg.sprite.spritecollide(sprite, group, False, collide_hit_rect)
         if hits:
@@ -37,13 +31,22 @@ def collide_with_walls(sprite, group, dir):
             sprite.vel.y = 0
             sprite.hit_rect.centery = sprite.pos.y
 
-# All subprograms within each class have a parameter of self which passes the class as a parameter
+# hit_rect collision detection
+# takes two sprites and returns whether the hit_rects collide
+# Author: KidsCanCode
+def collide_hit_rect(one, two):
+    return one.hit_rect.colliderect(two.rect)
 
+# All classes take pg.sprite.Sprite which signifies that it is a Pygame sprite
+# All subprograms have a parameter of self which allows attributes to be accessed throughout the whole class
+
+# Player class
+# Author: KidsCanCode, me
 class Player(pg.sprite.Sprite):
-    # initialise as a sprite
+    # initialise variables to be used in class
+    # Input: game class from main file, x and y coordinates of spawn point and character selected as string
+    # Author: KidsCanCode, me
     def __init__(self, game, x, y, char):
-        # initialise variables to be used in class
-        # takes game class from main file, x and y int coordinates of spawn and string define which character was selected
         self._layer = PLAYER_LAYER
         self.groups = game.all_sprites
         pg.sprite.Sprite.__init__(self, self.groups)
@@ -56,68 +59,71 @@ class Player(pg.sprite.Sprite):
         self.hit_rect.center = self.rect.center
         self.vel_x, self.vel_y = 0, 0
         self.vel = vec(self.vel_x, self.vel_y)
-        self.pos = vec(x, y) 
+        self.pos = vec(x, y)
         self.rot = 0
-        self.camera = Camera(game.map.width, game.map.height)
 
         #time initialising
-        time_now = time.time() # time when player object is initialised
+        time_now = time.time() # gets current time
         self.last_shot = time_now
         self.last_reload = time_now
-        self.last_dodge = 0 # change to time.time()
+        self.last_dodge = time_now # change to time.time()
         self.last_sprite_change = time_now
         self.last_ability = time_now
 
         # player and weapon data initialise
         self.weapon = PLAYERS[self.char]['weapon']
         self.health = PLAYERS[self.char]['health']
-        self.weapon_data = WEAPONS[self.weapon]
-        self.player_data = PLAYERS[self.char] 
+        self.weapon_data = WEAPONS[self.weapon] 
         self.ammo_count = WEAPONS[self.weapon]['ammo_count']
         self.full_ammo = WEAPONS[self.weapon]['ammo_count']
+        self.player_data = PLAYERS[self.char]
         self.ability_uses = PLAYERS[self.char]['e_uses']
+        self.face = 'down'
+        self.dir_move = 'down'
 
         # boolean intialising
         self.damaged = False
         self.reloading = False
         self.moving = False
-        self.lvlup = False
         self.ability_active = False
-
-        self.power = ''
         self.which_sprite = 0
 
         self.seconds_string = self.player_data['e_cooldown'] # string for ability timer
-        self.seconds_timer = time_now # time comparison variable
+        self.seconds_timer = time_now # timer for ability seconds
 
+        self.mouse_offset_pos = 0
+
+    # called repeatedly to check for which keys are pressed
+    # this method are for keys being held
+    # Author: KidsCanCode, me
     def get_keys(self):
-        # called repeatedly to check for which keys are pressed
-        # This method is for keys being held
-        # single press is in the events method in main.py
-
         # set values in case nothing gets set to it
         self.vel_x, self.vel_y = 0, 0
+
         keys = pg.key.get_pressed()
+        mouse_click = pg.mouse.get_pressed() # check for mouse button press
+        mouse_raw_pos = vec(pg.mouse.get_pos()) # initialise a vector of the mouse position
+        self.mouse_offset_pos = mouse_raw_pos - vec(self.game.camera.camera.topleft) # offset the mouse position for scrolling map
 
-        # default face
-        self.face = 'down'
+        # Conditions for shooting. mouse_click[0] is left mouse button
+        if self.ammo_count > 0 and self.reloading == False and mouse_click[0]:
+            self.shoot()
 
-        # Check if arrow key is pressed and set values accordingly
-        # Should convert this to function to avoid repetition
-        if keys[pg.K_UP]:
+        # Keys for moving
+        if keys[pg.K_w]:
             self.vel_y = -self.player_data['speed']
-            self.face = 'up' 
-        if keys[pg.K_DOWN]:
+            self.dir_move = 'up' 
+        if keys[pg.K_s]:
             self.vel_y = self.player_data['speed']
-            self.face = 'down' 
-        if keys[pg.K_RIGHT]:
+            self.dir_move = 'down' 
+        if keys[pg.K_d]:
             self.vel_x = self.player_data['speed']
-            self.face = 'right' 
-        if keys[pg.K_LEFT]:
+            self.dir_move = 'right'
+        if keys[pg.K_a]:
             self.vel_x = -self.player_data['speed']
-            self.face = 'left' 
+            self.dir_move = 'left'
 
-        # Diagonal movemnt
+        # Diagonal movement
         if self.vel_x != 0 and self.vel_y != 0:
             self.vel_x *= 0.7071
             self.vel_y *= 0.7071
@@ -127,35 +133,34 @@ class Player(pg.sprite.Sprite):
         else:
             self.moving = True
 
-        # Check if WASD is pressed. Maybe something that looks more efficient
-        if self.ammo_count > 0 and self.reloading == False:
-            if keys[pg.K_w]:
-                self.face = 'up'
-                self.shoot(90)
-            elif keys[pg.K_s]:
-                self.face = 'down'
-                self.shoot(270)
-            elif keys[pg.K_a]:
-                self.face = 'left'
-                self.shoot(180)
-            elif keys[pg.K_d]:
-                self.face = 'right'
-                self.shoot(0)
-
-        # Reload if condition 
+        # Reload
         if (keys[pg.K_r] and self.ammo_count != self.full_ammo) or self.ammo_count == 0:
             self.reload()
 
-        # Jump if condition
-        '''if keys[pg.K_SPACE] and self.moving == True:
-            now = pg.time.get_ticks()
-            if now - self.last_dodge > self.player_data['dodge_time']:
-                self.last_dodge = now
-                self.dodge()'''
+        # E ability
+        if keys[pg.K_e]:
+            self.e_ability()
 
+        # Dodge
+        if keys[pg.K_SPACE] and self.moving:
+            self.dodge()
+
+    # changes the value of self.face based on the value of self.rot
+    # Author: me
+    def change_face(self):
+        if -135 <= self.rot <= -45:
+            self.face = 'down'
+        if 45 <= self.rot <= 135:
+            self.face = 'up'
+        if 0 < self.rot < 45 or -45 < self.rot <= 0:
+            self.face = 'right'
+        if -180 <= self.rot <= -135 or 135 < self.rot < 179:
+            self.face = 'left'
+
+    # Draw player health in the top left corner
+    # Author: KidsCanCode, me
     def draw_player_health(self, surf, x, y, pct):
-        # Draw player health in the top left corner
-        if pct < 0:
+        if pct < 0: # if percentatge is 0
             pct = 0
         BAR_LENGTH = 100
         BAR_HEIGHT = 20
@@ -175,76 +180,60 @@ class Player(pg.sprite.Sprite):
         pg.draw.rect(surf, col, fill_rect)
         pg.draw.rect(surf, WHITE, outline_rect, 2)
 
-    def dodge(self): # allows to phase through walls
-        # function called when space is hit
-        # shifts character certain distance in a direction determined by self.face string
-        now = pg.time.get_ticks()
-        time = 0
-        if now - self.last_dodge > self.player_data['dodge_time']:
-        	self.last_dodge = now
-        	if self.face == 'up':
-        		self.vel_y -= self.player_data['dodge_dist']
-        	if self.face == 'down':
-        		self.vel_y += self.player_data['dodge_dist']
-        	if self.face == 'left':
-        		self.vel_x -= self.player_data['dodge_dist']
-        	if self.face == 'right':
-        		self.vel_x += self.player_data['dodge_dist']
+    # function called when space is hit
+    # moves character certain distance in a direction determined by self.face string
+    # Author: KidsCanCode, me
+    def dodge(self):
+        now = time.time()
+        if now - self.last_dodge > self.player_data['dodge_cooldown']:
+            self.last_dodge = now
+            # Thanks Nathan
+            if self.dir_move == 'up':
+                self.vel_y -= self.player_data['dodge_dist']
+            if self.dir_move == 'down':
+                self.vel_y += self.player_data['dodge_dist']
+            if self.dir_move == 'left':
+                self.vel_x -= self.player_data['dodge_dist']
+            if self.dir_move == 'right':
+                self.vel_x += self.player_data['dodge_dist']
 
+    # reloads user's weapon
     def reload(self):
-        # reload function
         self.last_reload = time.time()
         self.reloading = True
         self.ammo_count = self.full_ammo # sets ammo back to full
 
-    def shoot(self, rot):
-        # shoot function
+    # user shoots 
+    def shoot(self):
         self.image = self.game.player_img[self.char][self.face][0] # change sprite to face in shooting direction
         if time.time() - self.last_shot > self.weapon_data['rate']:
             self.ammo_count -= 1
             self.last_shot = time.time()
-            dir = vec(1, 0).rotate(-rot)
-            pos = self.pos + PLAYERS[self.char]['barrel_offset'][self.face].rotate(-rot) # offsets where bullet sprite spawns
-            self.vel = vec(-self.weapon_data['kickback'], 0).rotate(-rot) # knockback when shooting
-            Bullet(self.game, pos, dir, self.weapon_data['damage'], rot) # spawn bullet
+            dir = vec(1, 0).rotate(-self.rot)
+            pos = self.pos + PLAYERS[self.char]['barrel_offset'][self.face].rotate(-self.rot) # offsets where bullet sprite spawns
+            Bullet(self.game, pos, dir, self.weapon_data['damage'], self.rot) # spawn bullet
 
             # play sound
-            snd = choice(self.game.weapon_sounds[self.weapon])
+            snd = choice(self.game.weapon_sounds[self.player_data['id']])
             if snd.get_num_channels() > 2:
                 snd.stop()
             snd.play()
 
-            # Mostly not mine. Handles pellets per shot and bullet spread
-            '''for i in range(self.weapon_data['bullet_count']):
-                spread = uniform(-self.weapon_data['spread'], self.weapon_data['spread'])
-                Bullet(self.game, pos, dir.rotate(spread), self.weapon_data['damage'], rot) # Spawn bullet
-                snd = choice(self.game.weapon_sounds[self.weapon])
-                if snd.get_num_channels() > 2: # 
-                    snd.stop()
-                snd.play()'''
-            #MuzzleFlash(self.game, pos)
-
-    # works - not my code
-    def hit(self): # apply to mobs
+    # Sets variables for flash effect when hit
+    # Author: KidsCanCode
+    def hit(self):
         self.damaged = True
         self.damage_alpha = chain(DAMAGE_ALPHA) # 1 flash
 
+    # changes sprite
+    # Author: KidsCanCode, me
     def sprite_change(self):
-        # called whenever the sprite needs to be changed
         self.which_sprite = 1 - self.which_sprite
         self.image = self.game.player_img[self.char][self.face][self.which_sprite]
 
-    def powerup(self, item):
-        # powerup method
-        # item is a string that is determined by which powerup is hit
-        self.power = item
-        if item == 'shotgun':
-        	self.weapon_data['damage'] *= 2
-        if item == 'jump':
-        	self.player_data['dodge_dist'] *= 2
-
+    # Spawns ability
+    # Author: KidsCanCode, me
     def e_ability(self):
-        # e ability
         if time.time() - self.last_ability > self.player_data['e_cooldown'] and self.ability_active == False and self.ability_uses > 0: 
             self.ability_active = True
             self.ability_uses -= 1
@@ -252,54 +241,50 @@ class Player(pg.sprite.Sprite):
 
             # spawn ability
             Ability(self, self.game)
-            '''for bullet in self.game.mob_bullets:
-                bullet.kill()''' # idea for clearing all mob bullets off screen
 
-    def draw_ability(self):
+    # draws the time left for the ability to be active
+    # Author: KidsCanCode, me
+    def draw_ability_bar(self):
         if self.ability_active:
-            # equation for the health bar to decrease over time
+            # equation for the ability bar to decrease over time
             width = int(self.rect.width * abs(time.time() - self.last_ability - PLAYERS[self.char]['e_length']) / PLAYERS[self.char]['e_length'])
             ability_bar = pg.Rect(0, 0, width, 7)
             pg.draw.rect(self.image, GREEN, ability_bar)
 
+    # update the player object and calls get_keys() subprogram
+    # Author: KidsCanCode, me
     def update(self):
-        # update all necessary values and calls get_keys() subprogram
         self.vel = vec(self.vel_x, self.vel_y)
+
         self.get_keys()
+        dist = self.mouse_offset_pos - self.pos # vector between mouse and player position
+        self.rot = dist.angle_to(vec(1, 0)) # angle between player and mouse
+        self.change_face()
 
         # Reload timer
         if self.reloading and time.time() - self.last_reload > self.weapon_data['reload_time']:
             self.reloading = False
-        
-        # Level up timer
-        if self.damaged and self.lvlup == True:
-        	self.lvlup = False
-        	if self.power == 'shotgun':
-        		self.weapon_data['damage'] /= 2
-        	if self.power == 'jump':
-        		self.player_data['dodge_dist'] /= 2
 
         # Sprite change
         if (self.moving and time.time() - self.last_sprite_change > 0.1) or self.damaged:
             self.last_sprite_change = time.time()
-            #self.which_sprite = 1 - self.which_sprite # switch between 1 and 0
             self.sprite_change()
 
         self.image = self.image.copy() # used for the ability timer to be displayed properly on all sprites
 
         # update timer for the ability
-        if time.time() - self.seconds_timer >= 1:
-            self.seconds_timer = time.time()
+        if time.time() - self.seconds_timer > 1:
+            self.seconds_timer = time.time() # update timer
             self.seconds_string -= 1
             if self.seconds_string < 0:
-            	self.seconds_string = 0
+                self.seconds_string = 0
 
         if self.damaged:
-        	try:
-        		# special flags in pygame
-        		self.image.fill((255, 255, 255, next(self.damage_alpha)), special_flags=pg.BLEND_RGBA_MULT)
-        	except:
-        		self.damaged = False # exception is raised
+            try:
+                # player image flashes if hit
+                self.image.fill((255, 255, 255, next(self.damage_alpha)), special_flags=pg.BLEND_RGBA_MULT)
+            except:
+                self.damaged = False
 
         # Update player position
         self.rect = self.image.get_rect()
@@ -313,11 +298,39 @@ class Player(pg.sprite.Sprite):
         collide_with_walls(self, self.game.walls, 'y')
         self.rect.center = self.hit_rect.center
 
+# Mouse class
+# Author: me
+class Mouse(pg.sprite.Sprite):
+    # initialises class
+    # Author: me
+    def __init__(self, game, x, y):
+        self._layer = CROSSHAIR_LAYER
+        self.groups = game.all_sprites
+        pg.sprite.Sprite.__init__(self, self.groups)
+        self.game = game
+        self.image = game.crosshair_img
+        self.rect = self.image.get_rect()
+        self.x = x
+        self.y = y
+        self.pos = vec(x, y)
+        self.rect.center = self.pos
+        self.hit_rect = self.rect
+
+    # update mouse object
+    # Author: me
+    def update(self):
+        self.rect = self.image.get_rect()
+        self.pos = pg.mouse.get_pos()
+        self.rect.center = self.pos
+        self.hit_rect = self.rect # so game doesn't crash when in hitbox mode
+
+# Mob super class
+# Author: KidsCanCode, me
 class Mob(pg.sprite.Sprite):
-    # initialise as a sprite
+    # initialises Mob super class
+    # Input: game object, x and y coordinates and type of mob as string
+    # Author: KidsCanCode, me
     def __init__(self, game, x, y, type):
-        # initialise mob sprite
-        # parameters passed are the game class, x and y int coordinates of spawn and which type of mob, held in a string
         self._layer = MOB_LAYER
         self.groups = game.all_sprites, game.mobs
         pg.sprite.Sprite.__init__(self, self.groups)
@@ -330,9 +343,9 @@ class Mob(pg.sprite.Sprite):
         self.vel = vec(0, 0)
         self.acc = vec(0, 0)
         self.rect = self.image.get_rect()
+        self.rect.center = self.pos
         self.hit_rect = self.rect.copy()
         self.hit_rect.center = self.rect.center
-        self.rect.center = self.pos
         self.face = 'down'
         self.rot = 0
         self.which_sprite = 0
@@ -342,29 +355,32 @@ class Mob(pg.sprite.Sprite):
         self.target = game.player
         self.moving = False
         self.damaged = False
-        self.point_worth = 1
-
+    
+    # avoids mobs stacking on top of each other
+    # Author: KidsCanCode
     def avoid_mobs(self): 
-        # avoids mobs stacking on top of each other
-        # kidscancode code
         for mob in self.game.mobs:
             if mob != self:
                 dist = self.pos - mob.pos
                 if 0 < dist.length() < self.mob_data['avoid_radius']:
                     self.acc += dist.normalize()
 
-    def hit(self): # apply to mobs
+    # Sets variables for flash effect when hit
+    # Author: KidsCanCode
+    def hit(self):
         self.damaged = True
         self.damage_alpha = chain(DAMAGE_ALPHA) # 1 flash
 
+    # changes mob image
+    # Author: me
     def sprite_change(self):
-        # called when sprite needs to be changed
         self.which_sprite = 1 - self.which_sprite
         self.image = self.game.mob_img[self.enemy_type][self.face][self.which_sprite]
 
+    # draws health of each mob on top of sprite
+    # Author: KidsCanCode, me
     def draw_health(self):
-        # draws health of each mob on top of sprite
-        #change color based on health
+        # change color based on health
         health_pct = self.health / self.mob_data['health']
         if health_pct > 0.6:
             col = GREEN
@@ -378,34 +394,33 @@ class Mob(pg.sprite.Sprite):
             width = 0
         health_bar = pg.Rect(0, 0, width, 7)
         if health_pct < 1:
-        	pg.draw.rect(self.image, col, health_bar)
+            pg.draw.rect(self.image, col, health_bar)
 
+    # called when mob dies
+    # Author: KidsCanCode, me
     def killed(self):
-    	# called when mob dies
-    	self.game.score += self.point_worth # add to score
-        choice(self.game.zombie_hit_sounds).play()
+        self.game.score += self.point_worth # add to score
+        self.game.death_sound.play()
         self.kill() # remove sprite from group
-        self.game.map_img.blit(self.game.splat, self.pos - vec(32, 32))
 
+    # Change value of self.face based on self.rot value
+    # Author: KidsCanCode, me
     def change_face(self):
         if -135 <= self.rot <= -45:
-        	self.face = 'down'
+            self.face = 'down'
         if 45 <= self.rot <= 135:
-        	self.face = 'up'
+            self.face = 'up'
         if 0 < self.rot < 45 or -45 < self.rot <= 0:
-        	self.face = 'right'
-        if -180 < self.rot <= -135 or 135 < self.rot < 179:
-        	self.face = 'left'
+            self.face = 'right'
+        if -180 <= self.rot <= -135 or 135 < self.rot < 179:
+            self.face = 'left'
 
+    # updates the mob class
+    # Author: KidsCanCode, me
     def update(self):
-    	'''
-    	 * PUT THE DAMAGE STUFF OUTSIDE THE IF STATEMENT * 
-    	'''
-        # updates all necessary values
         target_dist = self.target.pos - self.pos
-        if target_dist.length_squared() < self.mob_data['detect_radius']**2:
-            if random() < 0.002:
-                choice(self.game.zombie_moan_sounds).play()
+        # checks whether player is within mob detectrange
+        if target_dist.length_squared() < self.mob_data['detect_radius']**2: 
             self.moving = True
             self.rot = target_dist.angle_to(vec(1, 0)) # angle between player and mob
             self.change_face()
@@ -427,13 +442,12 @@ class Mob(pg.sprite.Sprite):
             self.hit_rect.centery = self.pos.y
             collide_with_walls(self, self.game.walls, 'y')
             self.rect.center = self.hit_rect.center
-
         else:
             self.moving = False
 
         # mob death
         if self.health <= 0:
-        	self.killed()
+            self.killed()
 
         # check to change sprite
         if (self.moving and pg.time.get_ticks() - self.last_sprite_change > 100) or self.damaged:
@@ -444,67 +458,90 @@ class Mob(pg.sprite.Sprite):
         self.image = self.image.copy()
 
         if self.damaged:
-        	try:
-        		# special flags in pygame
-        		self.image.fill((255, 255, 255, next(self.damage_alpha)), special_flags=pg.BLEND_RGBA_MULT)
-        	except:
-        		self.damaged = False # exception raised
+            try:
+                # image flash if hit
+                self.image.fill((255, 255, 255, next(self.damage_alpha)), special_flags=pg.BLEND_RGBA_MULT)
+            except:
+                self.damaged = False # exception raised
 
-class Trooper(Mob):
+# Brawler sub class
+# Author: KidsCanCode, me
+class Brawler(Mob):
+    # initialises brawler sub class
+    # Input: game object, x and y coordinates and type of mob as string 
     def __init__(self, game, x, y, type):
-        Mob.__init__(self, game, x, y, type) # call mob class init
+        Mob.__init__(self, game, x, y, type) # initialise super class
+        self.point_worth = 1
+
+# Trooper sub class
+# Author: KidsCanCode, me
+class Trooper(Mob):
+    # initialises brawler sub class
+    # Input: game object, x and y coordinates and type of mob as string 
+    def __init__(self, game, x, y, type):
+        Mob.__init__(self, game, x, y, type) # initialise super class
         self.weapon_data = WEAPONS[type]
         self.last_shoot = time.time()
         self.point_worth = 2
 
+    # makes the mob shoots
     def shoot(self):
-    	# shoot method
         if time.time() - self.last_shoot > self.weapon_data['rate']:
             self.last_shoot = time.time()
             pos = self.pos + vec(10, 10).rotate(-self.rot)
             dir = vec(1, 0).rotate(-self.rot)
             MobBullet(self.game, pos, dir, self.weapon_data['damage'], self.rot, 'trooper')
 
+    # calls mob class update and adds the shoot method call
     def update(self):
         super(Trooper, self).update() # call mob class update
         target_dist = self.target.pos - self.pos
         if target_dist.length_squared() < self.mob_data['detect_radius']**2:
             self.shoot()
 
+# Demon sub class
+# Author: KidsCanCode, me
 class Demon(Mob):
-	def __init__(self, game, x, y, type):
-		Mob.__init__(self, game, x, y, type)
-		self.weapon_data = WEAPONS[type]
-		self.last_shoot = time.time()
-		self.point_worth = 3
+    # initialises brawler sub class
+    # Input: game object, x and y coordinates and type of mob as string 
+    def __init__(self, game, x, y, type):
+        Mob.__init__(self, game, x, y, type) # initialise super class
+        self.weapon_data = WEAPONS[type]
+        self.last_shoot = time.time()
+        self.point_worth = 5
 
-	def shoot(self):
-		if time.time() - self.last_shoot > self.weapon_data['rate']:
-			self.last_shoot = time.time()
-			# dude has a shotgun
-			for i in range(self.weapon_data['bullet_count']):
-				pos = self.pos + vec(10, 10).rotate(-self.rot)
-				dir = vec(1, 0).rotate(-self.rot)
-				spread = uniform(-self.weapon_data['spread'], self.weapon_data['spread'])
-				MobBullet(self.game, pos, dir.rotate(spread), self.weapon_data['damage'], self.rot, 'demon') # Spawn bullet
+    # makes the mob shoot
+    def shoot(self):
+        if time.time() - self.last_shoot > self.weapon_data['rate']:
+            self.last_shoot = time.time()
+            # dude has a shotgun
+            for i in range(self.weapon_data['bullet_count']):
+                pos = self.pos + vec(10, 10).rotate(-self.rot)
+                dir = vec(1, 0).rotate(-self.rot)
+                spread = uniform(-self.weapon_data['spread'], self.weapon_data['spread'])
+                MobBullet(self.game, pos, dir.rotate(spread), self.weapon_data['damage'], self.rot, 'demon') # Spawn bullet
 
-	def update(self):
-		super(Demon, self).update()
-		target_dist = self.target.pos - self.pos
-		if target_dist.length_squared() < self.mob_data['detect_radius']**2:
-			self.shoot()
+    # calls mob class update and adds the shoot method call
+    def update(self):
+        super(Demon, self).update()
+        target_dist = self.target.pos - self.pos
+        if target_dist.length_squared() < self.mob_data['detect_radius']**2:
+            self.shoot()
 
-class Level1(Mob):
-    def __init__(self, game, x, y):
-    	# initialise variables
-    	# takes game class, x and y coordinates
+# Boss super class
+# Author: KidsCanCode, me
+class Boss(Mob):
+    # initialises boss super class
+    # Input: game object, x and y coordinates and type of mob as string 
+    def __init__(self, game, x, y, type):
         self._layer = MOB_LAYER
         self.groups = game.all_sprites, game.mobs
         pg.sprite.Sprite.__init__(self, self.groups)
         self.game = game
-        self.image = game.boss_img[0]
-        self.mob_data = BOSS['level1']
-        self.weapon_data = WEAPONS['level1']
+        self.type = type
+        self.image = game.boss_images[self.type]
+        self.mob_data = BOSS[self.type]
+        self.weapon_data = WEAPONS[self.type]
 
         self.pos = vec(x, y)
         self.vel = vec(0, 0)
@@ -520,22 +557,11 @@ class Level1(Mob):
         self.point_worth = 10
         self.damaged = False
 
-    def shoot(self):
-    	# shoot method
-        if time.time() - self.last_shoot > self.weapon_data['rate']:
-            self.last_shoot = time.time()
-            dir = vec(1, 0).rotate(-self.rot)
-            pos = self.pos + vec(10, 10).rotate(-self.rot)
-            MobBullet(self.game, pos, dir, self.weapon_data['damage'], self.rot, 'level1')
-            pos = self.pos + vec(10, -15).rotate(-self.rot)
-            MobBullet(self.game, pos, dir, self.weapon_data['damage'], self.rot, 'level1')
-
+    # updates boss object
     def update(self):
         #updates all necessary values
         target_dist = self.target.pos - self.pos
         if target_dist.length_squared() < self.mob_data['detect_radius']**2:
-            if random() < 0.002:
-                choice(self.game.zombie_moan_sounds).play()
             self.rot = target_dist.angle_to(vec(1, 0)) #angle between player and mob
             self.shoot()            
             self.rect.center = self.pos
@@ -545,11 +571,11 @@ class Level1(Mob):
             self.image = self.image.copy()
 
             if self.damaged:
-	            try:
-	                # special flags in pygame you can use
-	                self.image.fill((255, 255, 255, next(self.damage_alpha)), special_flags=pg.BLEND_RGBA_MULT)
-	            except:
-	                self.damaged = False # exception is raised
+                try:
+                    # mob flashes if hit
+                    self.image.fill((255, 255, 255, next(self.damage_alpha)), special_flags=pg.BLEND_RGBA_MULT)
+                except:
+                    self.damaged = False # exception is raised
 
             # update position
             self.acc.scale_to_length(self.speed)
@@ -563,21 +589,62 @@ class Level1(Mob):
             self.hit_rect.centery = self.pos.y
             collide_with_walls(self, self.game.walls, 'y')
             self.rect.center = self.hit_rect.center
-            self.image = pg.transform.rotate(self.game.boss_img[0], self.rot)
+            self.image = pg.transform.rotate(self.game.boss_images[self.type], self.rot)
 
             if self.health <= 0:
-            	self.killed()
+                self.killed()
 
+# Level1 sub class
+# Author: KidsCanCode, me
+class Level1(Boss):
+    # initialises level1 sub class
+    # Input: game object, x and y coordinates and type of mob as string 
+    # Boss that spawns in level 1
+    def __init__(self, game, x, y):
+        # takes game class, x and y coordinates as parameters
+        type = 'level1'
+        Boss.__init__(self, game, x, y, type) # initialise super class
+
+    # makes the boss shoot
+    def shoot(self):
+        if time.time() - self.last_shoot > self.weapon_data['rate']:
+            self.last_shoot = time.time()
+            dir = vec(1, 0).rotate(-self.rot)
+            pos = self.pos + vec(10, 10).rotate(-self.rot)
+            MobBullet(self.game, pos, dir, self.weapon_data['damage'], self.rot, self.type)
+            pos = self.pos + vec(10, -15).rotate(-self.rot)
+            MobBullet(self.game, pos, dir, self.weapon_data['damage'], self.rot, self.type)
+
+# Level2 sub class
+# Author: KidsCanCode, me
+class Level2(Boss):
+    # initialises level2 sub class
+    # Input: game object, x and y coordinates and type of mob as string 
+    # Boss that spawns in level 2
+    def __init__(self, game, x, y):
+        # takes game class, x and y coordinates as parameters
+        type = 'level2'
+        Boss.__init__(self, game, x, y, type) # initialise super class
+
+    # makes the boss shoot
+    def shoot(self):
+        if time.time() - self.last_shoot > self.weapon_data['rate']:
+            self.last_shoot = time.time()
+            dir = vec(1, 0).rotate(-self.rot)
+            pos = self.pos + vec(10, 10).rotate(-self.rot)
+            MobBullet(self.game, pos, dir, self.weapon_data['damage'], self.rot, self.type)
+
+# Player bullet class
+# Author: KidsCanCode, me
 class Bullet(pg.sprite.Sprite):
-    # initialise as a sprite
+    # initialises bullet class
+    # Input: game object, position to spawn, direction facing, damage value and angle to be fired 
+    # Author: KidsCanCode, me
     def __init__(self, game, pos, dir, damage, angle):
-        # initialise values
-        # game is game class, pos is x and y integer coodinates, dir is integer for bullet with spread and angle is integer for angle of bullet
         self.game = game
         self._layer = BULLET_LAYER
         self.groups = game.all_sprites, game.bullets
         pg.sprite.Sprite.__init__(self, self.groups)
-        #self.image = game.bullet_images[WEAPONS[game.player.weapon]['bullet_size']]
         self.image = game.bullet_images[game.player.weapon]
         self.image = pg.transform.rotate(self.image, angle)
         self.rect = self.image.get_rect()
@@ -588,17 +655,25 @@ class Bullet(pg.sprite.Sprite):
         self.spawn_time = pg.time.get_ticks()
         self.damage = damage
 
+    # update bullet position
+    # Author: KidsCanCode, me
     def update(self):
-        # updates bullet position
         self.pos += self.vel * self.game.dt
         self.rect.center = self.pos
-        # self.kill() removes sprite from screen if hit
+        # bullet hits walls
         if pg.sprite.spritecollideany(self, self.game.walls):
             self.kill()
-        if pg.time.get_ticks() - self.spawn_time > WEAPONS[self.game.player.weapon]['bullet_lifetime']: # change this for the boss shooting
+
+        # bullet lifetime is up
+        if pg.time.get_ticks() - self.spawn_time > WEAPONS[self.game.player.weapon]['bullet_lifetime']:
             self.kill()
 
-class MobBullet(Bullet):
+# Mob bullet class
+# Author: KidsCanCode, me
+class MobBullet(pg.sprite.Sprite):
+    # initialises mobbullet class
+    # Input: game object, position to spawn, direction facing, damage value and angle to be fired and type of mob as string
+    # Author: KidsCanCode, me
     def __init__(self, game, pos, dir, damage, angle, type):
         self.game = game
         self._layer = BULLET_LAYER
@@ -615,20 +690,21 @@ class MobBullet(Bullet):
         self.spawn_time = pg.time.get_ticks()
         self.damage = damage
 
+    # update bullet position
+    # Author: KidsCanCode, me
     def update(self):
-        # update bullet position
         self.pos += self.vel * self.game.dt
         self.rect.center = self.pos
-        # self.kill() removes sprite from screen if hit
         if pg.sprite.spritecollideany(self, self.game.walls):
             self.kill()
         if pg.time.get_ticks() - self.spawn_time > WEAPONS[self.type]['bullet_lifetime']: # change this for the boss shooting
             self.kill()
 
-class Obstacle(pg.sprite.Sprite):
-    # initialise as sprite
+# Wall class
+# Author: KidsCanCode, me
+class Wall(pg.sprite.Sprite):
+    # Input: game object, x and y integer coordinates, width and height
     def __init__(self, game, x, y, w, h):
-        # game is game class, x and y integer coordinates and w = width and h = height
         self.groups = game.walls
         pg.sprite.Sprite.__init__(self, self.groups)
         self.game = game
@@ -638,68 +714,26 @@ class Obstacle(pg.sprite.Sprite):
         self.rect.x = x
         self.rect.y = y
 
+# Exit class
+# Author: KidsCanCode, me
 class Exit(pg.sprite.Sprite):
-	def __init__(self, game, x, y, w, h):
-		self.groups = game.exit
-		pg.sprite.Sprite.__init__(self, self.groups)
-		self.rect = pg.Rect(x, y, w, h)
-		self.x = x
-		self.y = y
-		self.rect.x = x
-		self.rect.y = y
-
-# Will somewhat implement later
-'''class MuzzleFlash(pg.sprite.Sprite):
-    def __init__(self, game, pos):
-        self._layer = EFFECTS_LAYER
-        self.groups = game.all_sprites
+    # initialise exit block which triggers the next level to spawn
+# Input: game object, x and y integer coordinates, width and height
+    def __init__(self, game, x, y, w, h):
+        self.groups = game.exit
         pg.sprite.Sprite.__init__(self, self.groups)
-        self.game = game
-        size = randint(20, 50)
-        self.image = pg.transform.scale(choice(game.gun_flashes), (size, size))
-        self.rect = self.image.get_rect()
-        self.hit_rect = self.rect
-        self.pos = pos
-        self.rect.center = pos
-        self.spawn_time = pg.time.get_ticks()
+        self.rect = pg.Rect(x, y, w, h)
+        self.x = x
+        self.y = y
+        self.rect.x = x
+        self.rect.y = y
 
-    def update(self):
-        if pg.time.get_ticks() - self.spawn_time > FLASH_DURATION: # effect duration check
-            self.kill()'''
-
-class Item(pg.sprite.Sprite):
-    # initialise as sprite
-    def __init__(self, game, pos, type):
-        # game is game class, pos is integer of position and type is string of which item
-        self._layer = ITEMS_LAYER
-        self.groups = game.all_sprites, game.items
-        pg.sprite.Sprite.__init__(self, self.groups)
-        self.game = game
-        self.image = game.item_images[type]
-        self.rect = self.image.get_rect()
-        self.hit_rect = self.rect
-        self.type = type
-        self.pos = pos
-        self.rect.center = pos
-        self.tween = tween.easeInOutSine
-        self.step = 0
-        self.dir = 1
-
-    def update(self):
-        # update necessary values
-        # Not my code. Looked cool from the tutorial I watched
-        # bobbing motion
-        offset = BOB_RANGE * (self.tween(self.step / BOB_RANGE) - 0.5)
-        self.rect.centery = self.pos.y + offset * self.dir
-        self.step += BOB_SPEED
-        if self.step > BOB_RANGE:
-            self.step = 0
-            self.dir *= -1
-
-class Ability(pg.sprite.Sprite): # POSSIBLY CHANGE TO HAVE THE PLAYER GET KEYS METHOD
-    # initialise as sprite
+# Ability class
+# Author: KidsCanCode, me
+class Ability(pg.sprite.Sprite):
+    # initialise ability variables for the player
+    # Input: player and game object
     def __init__(self, player, game):
-        # player is player class and game is game class
         self._layer = ITEMS_LAYER
         self.groups = game.all_sprites
         pg.sprite.Sprite.__init__(self, self.groups)
@@ -715,28 +749,24 @@ class Ability(pg.sprite.Sprite): # POSSIBLY CHANGE TO HAVE THE PLAYER GET KEYS M
         self.spawn_time = time.time()
         self.time_in = time.time()
 
+    # adds health to player
+    # Author: KidsCanCode, me
     def add_health(self):
-        # method that determines how fast the character gains health and how much health is gained
-        '''if time.time() - self.time_in > PLAYERS[self.char]['e_gain_rate']:
-            self.time_in = time.time()
-            if self.player.health + PLAYERS[self.char]['e_health_gain'] >= PLAYERS[self.char]['health']:
-                self.player.health = PLAYERS[self.char]['health']
-            else:
-                self.player.health += PLAYERS[self.char]['e_health_gain']'''
         if self.player.health + PLAYERS[self.char]['e_health_gain'] >= PLAYERS[self.char]['health']:
-        	self.player.health = PLAYERS[self.char]['health']
+            self.player.health = PLAYERS[self.char]['health']
         else:
-        	self.player.health += PLAYERS[self.char]['e_health_gain']
+            self.player.health += PLAYERS[self.char]['e_health_gain']
 
-
+    # updates the position and time spawned of ability image
+    # Author: KidsCanCode, me
     def update(self):
         # different pygame collide functions based on character
         if self.char == 'mage':
             hits = pg.sprite.collide_rect(self, self.player)
             if hits:
-            	if time.time() - self.time_in > PLAYERS[self.char]['e_gain_rate']:
-            		self.time_in = time.time()
-                	self.add_health()
+                if time.time() - self.time_in > PLAYERS[self.char]['e_gain_rate']:
+                    self.time_in = time.time()
+                    self.add_health()
 
         if self.char == 'knight':
             self.rect.center = self.player.rect.center
@@ -749,12 +779,15 @@ class Ability(pg.sprite.Sprite): # POSSIBLY CHANGE TO HAVE THE PLAYER GET KEYS M
                 self.add_health()
                 mob.vel = vec(0, 0) # slows down mob when entering shield
 
-        if self.char == 'ninja' and self.game.mob_hit:
-        	self.add_health()
+        if self.char == 'ninja':
+            self.rect.center = self.player.rect.center
+            if self.game.mob_hit:
+                self.add_health()
 
         # removes the sprite from the screen if the time of ability is up
         if time.time() - self.spawn_time > PLAYERS[self.char]['e_length']:
             self.player.ability_active = False
             self.player.seconds_string = PLAYERS[self.char]['e_cooldown'] # set ability time string to the cooldown of the chars ability
+            self.player.seconds_timer = time.time() # reset timer
             self.player.last_ability = time.time()
-            self.kill() # despawn the ability
+            self.kill()
